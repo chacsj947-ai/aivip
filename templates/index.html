@@ -1,0 +1,195 @@
+<!-- templates/index_v4.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WormGPT v5.2 Multi-Model</title>
+    <style>
+        :root {
+            --bg: #050505;
+            --panel: #111;
+            --accent: #b026ff;
+            --text: #eee;
+            --text-dim: #888;
+            --border: #333;
+        }
+
+        body {
+            margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* Auth */
+        #auth-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+            display: flex; justify-content: center; align-items: center; z-index: 50;
+        }
+        .auth-box { background: var(--panel); padding: 30px; border-radius: 12px; width: 320px; border: 1px solid var(--border); text-align: center; }
+        input { width: 100%; padding: 10px; margin: 8px 0; background: #222; border: 1px solid #444; color: white; box-sizing: border-box; border-radius: 6px; }
+        .btn { width: 100%; padding: 10px; background: var(--accent); border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .btn:hover { filter: brightness(1.2); }
+
+        /* Main */
+        header { padding: 15px 20px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-weight: 800; font-size: 1.2rem; letter-spacing: 1px; color: var(--accent); text-transform: uppercase; }
+        .user-info { font-size: 0.9rem; color: var(--text-dim); }
+        .user-info span { font-weight: bold; color: white; margin: 0 5px; }
+        
+        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        
+        .bubble { max-width: 75%; padding: 12px 16px; border-radius: 8px; line-height: 1.5; font-size: 0.95rem; animation: fadeIn 0.2s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .user { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 2px; }
+        .ai { align-self: flex-start; background: #1a1a1a; border: 1px solid var(--border); border-left: 3px solid var(--accent); }
+
+        .controls-area { padding: 15px 20px; background: var(--panel); border-top: 1px solid var(--border); }
+        
+        select { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 6px; margin-bottom: 10px; cursor: pointer; }
+        
+        .input-group { display: flex; gap: 10px; }
+        .input-group input { flex: 1; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- Login -->
+    <div id="auth-overlay">
+        <div class="auth-box">
+            <h2 style="margin-top:0; color:var(--accent)">WormGPT v5.2</h2>
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            <button class="btn" onclick="login()">Đăng Nhập</button>
+            <div style="margin-top:15px; font-size:0.8rem; color:#666;">
+                Tài khoản demo: <b>admin</b> / <b>admin123</b>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="hidden">
+        <header>
+            <div class="brand">WormGPT v5.2</div>
+            <div class="user-info">Xin chào, <span id="user-name"></span> (Level <span id="user-level"></span>)</div>
+        </header>
+
+        <div id="chat-box">
+            <div class="bubble ai">Chào mừng đến với WormGPT v5.2 Multi-Model. Hãy chọn một mô hình từ bên dưới để bắt đầu.</div>
+        </div>
+
+        <div class="controls-area">
+            <select id="model-select">
+                <!-- Javascript sẽ điền danh sách ở đây -->
+            </select>
+            <div class="input-group">
+                <input type="text" id="user-input" placeholder="Nhập yêu cầu của bạn..." onkeypress="handleEnter(event)">
+                <button class="btn" onclick="sendMessage()">Gửi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('wormgpt_token');
+        let models = [];
+
+        // Load Models
+        async function loadModels() {
+            const res = await fetch('/models');
+            const data = await res.json();
+            models = data.models;
+            
+            const select = document.getElementById('model-select');
+            select.innerHTML = models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+        }
+
+        async function login() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            
+            const res = await fetch('/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({username: user, password: pass})
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                token = data.access_token;
+                localStorage.setItem('wormgpt_token', token);
+                document.getElementById('auth-overlay').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('user-name').innerText = user;
+                document.getElementById('user-level').innerText = 5; // Demo admin
+                loadModels();
+            } else {
+                alert(data.detail);
+            }
+        }
+
+        function handleEnter(e) {
+            if(e.key === 'Enter') sendMessage();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const text = input.value.trim();
+            const model = document.getElementById('model-select').value;
+            
+            if(!text) return;
+
+            const chat = document.getElementById('chat-box');
+            chat.innerHTML += `<div class="bubble user">${text}</div>`;
+            input.value = '';
+            
+            chat.innerHTML += `<div class="bubble ai" id="typing">Đang kết nối với ${model}...</div>`;
+            chat.scrollTop = chat.scrollHeight;
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ message: text, model: model })
+                });
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let currentAI = document.getElementById('typing');
+                let fullText = '';
+
+                while(true) {
+                    const {done, value} = await reader.read();
+                    if(done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    for(const line of lines) {
+                        if(line.startsWith('data: ')) {
+                            const d = JSON.parse(line.slice(6));
+                            if(d.content) {
+                                fullText += d.content;
+                                currentAI.innerHTML = fullText.replace(/\n/g, '<br>');
+                                chat.scrollTop = chat.scrollHeight;
+                            }
+                        }
+                    }
+                }
+            } catch(e) {
+                document.getElementById('typing').innerText = "Lỗi kết nối API.";
+            }
+        }
+
+        if(token) {
+            document.getElementById('auth-overlay').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            document.getElementById('user-name').innerText = "Admin";
+            document.getElementById('user-level').innerText = 5;
+            loadModels();
+        }
+    </script>
+</body>
+</html>
